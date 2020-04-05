@@ -50,19 +50,19 @@ function runApp() {
             switch(answer.action) {
             case "View All Employees":
                 queryViewAll(employees);
-            //     break;
+                break;
             // case "View All Employees by Manager":
             //     queryViewByManager();
             //     break;
             // case "View All Employees by Department":
             //     queryViewByDepartment();
-            //     break;
+                // break;
             case "Add Employee":
                 queryAddEmployee();
                 break;
             // case "Update Employee Role":
             //     queryUpdate(employees);
-                break;
+                // break;
             case "View All Departments":
                 queryViewAll(departments);
                 break;
@@ -119,7 +119,7 @@ const queryAddRole = () => {
             name: "name", 
             type: "input", 
             message: "Enter the name of a new role:"
-        }, {
+        },{
             name: "salary",
             type: "input",
             message: "Enter the salary for this role:"
@@ -131,43 +131,85 @@ const queryAddRole = () => {
             connection.query(department, (err, res) => {
                 if(err) throw err;
                 // add role to roles
+                console.log("This is res from department insert query", res);
                 let query = `insert into ${roles} (name, salary) values ("${answer.name}", "${answer.salary}")`;
                 connection.query(query, (err, res) => {
                     if(err) throw err;
-                    queryViewAll(roles);
+                    queryViewAll(res);
+                    runApp();
                 });  
             })
         });
 };
 
-// const queryAddEmployee = () => {
-//     inquirer
-//         .prompt([
-//         {
-//             name: "firstName",
-//             type: "input",
-//             message: "What is the employee's first name?"
-//         }, {
-//             name: "lastName",
-//             type: "input", 
-//             message: "What is the employee's last name?"
-//         }, {
-//             name: "role",
-//             type: "input", 
-//             message: "What is the employee's role?"
-//         }, {
-//             name: "manager", 
-//             type: "input", 
-//             message: "Who is the manager?"
-//         }
-//         ])
-//         .then(employee => {
-//             const manager = `Select id from ${employees} where ?`;
-//             connection.query(manager, {: employee.manager}, (err, res) => {
-//                 if(err) throw err;
-//                 console.log(res);
-//             });
-//             // const query = `Insert into ${employees} (first_name, last_name) `;
-//             // query += `values ("${employee.firstName}", "${employee.lastName}")`;
-//         }); 
-// }
+const queryAddEmployee = () => {
+    let roleQuery = `Select distinct roles_id, title from roles`;
+    roleQuery += ` inner join employees`;
+    roleQuery += ` on roles_id = role_id`;
+    connection.query(roleQuery, (err, res_roles) => {
+        if(err) throw err;
+        let role = [];
+        for (let i=0; i<res_roles.length; i++) {
+            role.push(res_roles[i].title);
+        };
+        inquirer
+        .prompt([
+            {
+                name: "firstName",
+                type: "input",
+                message: "What is the employee's first name?"
+            },{
+                name: "lastName",
+                type: "input", 
+                message: "What is the employee's last name?"
+            },{
+                name: "role",
+                type: "list", 
+                message: "What is the employee's role?",
+                choices: role
+            }
+        ]).then(employee => {
+            const roleId = res_roles.findIndex(row => row.title === employee.role);
+            let managerQuery = `Select id, first_name, last_name from employees`;
+            managerQuery += ` inner join roles`;
+            managerQuery += ` on role_id = roles_id`;
+            managerQuery += ` where isManager = true`;
+            connection.query(managerQuery, (err, res_manager) => {
+                if(err) throw err;
+                let manager_list = [];
+                console.log(res_manager);
+                for (let i=0; i<res_manager.length; i++) {
+                    manager_list.push(`${res_manager[i].first_name} ${res_manager[i].last_name}`);
+                };
+                manager_list.push("none");
+                inquirer
+                    .prompt({
+                            name: "manager",
+                            type: "list",
+                            message: "Who is the employee's manager?",
+                            choices: manager_list
+                    })
+                    .then(manager => {
+                        let newEmployee = [employee.firstName, employee.lastName, res_roles[roleId].roles_id];
+                        let insertQuery = "";
+                        if (manager.manager === "none") {
+                            insertQuery += `insert into employees (first_name, last_name, role_id)`;
+                            insertQuery += `values (?, ?, ?) `;
+                        } else {
+                            insertQuery = `insert into employees (first_name, last_name, role_id, manager_id)`;
+                            insertQuery += `values (?, ?, ?, ?) `;
+                            const name = manager.manager.split(" ");
+                            const managerId = res_manager.findIndex(row => row.first_name === name[0]);
+                            console.log(managerId);
+                            newEmployee.push(res_manager[managerId].id);
+                        }
+                        connection.query(insertQuery, newEmployee, (err, res) => {
+                            if(err) throw err;
+                            console.log(`Success! New employee ${employee.firstName} ${employee.lastName} added.`);
+                            runApp();
+                        });
+                    });
+            });
+        }); 
+    });
+};
