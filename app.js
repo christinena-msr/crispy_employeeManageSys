@@ -6,6 +6,11 @@ const employees = "employees";
 const roles = "roles";
 const departments = "departments";
 
+let managerQuery = `Select id, first_name, last_name from employees`;
+managerQuery += ` inner join roles`;
+managerQuery += ` on role_id = roles_id`;
+managerQuery += ` where isManager = true`;
+
 const connection = mysql.createConnection({
     host: "localhost",
     port: 3306,
@@ -28,8 +33,8 @@ function runApp() {
             message: "What would you like to do?",
             choices: [
                 "View All Employees",
-                // "View All Employees by Manager",
-                // "View All Employees by Department",
+                "View All Employees by Manager",
+                "View All Employees by Department",
                 "Add Employee",
                 // "Update Employee Role",
                 // "Update Employee",
@@ -51,9 +56,9 @@ function runApp() {
             case "View All Employees":
                 queryViewAll(employees);
                 break;
-            // case "View All Employees by Manager":
-            //     queryViewByManager();
-            //     break;
+            case "View All Employees by Manager":
+                queryViewByManager();
+                break;
             // case "View All Employees by Department":
             //     queryViewByDepartment();
                 // break;
@@ -81,16 +86,6 @@ function runApp() {
             }
         });
 }
-
-const queryViewAll = (tableName) => {
-    const query = "Select * from " + tableName;
-    console.log(query);
-    connection.query(query, (err, res) => {
-        if(err) throw err;
-        console.table(res);
-        runApp();
-    });
-};
 
 const queryAddDepartment = () => {
     inquirer
@@ -143,15 +138,18 @@ const queryAddRole = () => {
 };
 
 const queryAddEmployee = () => {
+    // select all roles
     let roleQuery = `Select distinct roles_id, title from roles`;
     roleQuery += ` inner join employees`;
     roleQuery += ` on roles_id = role_id`;
     connection.query(roleQuery, (err, res_roles) => {
         if(err) throw err;
+        // create choices array for user
         let role = [];
         for (let i=0; i<res_roles.length; i++) {
             role.push(res_roles[i].title);
         };
+        // prompt user to add employee information
         inquirer
         .prompt([
             {
@@ -170,18 +168,16 @@ const queryAddEmployee = () => {
             }
         ]).then(employee => {
             const roleId = res_roles.findIndex(row => row.title === employee.role);
-            let managerQuery = `Select id, first_name, last_name from employees`;
-            managerQuery += ` inner join roles`;
-            managerQuery += ` on role_id = roles_id`;
-            managerQuery += ` where isManager = true`;
+            // query for manager choices list
             connection.query(managerQuery, (err, res_manager) => {
                 if(err) throw err;
                 let manager_list = [];
-                console.log(res_manager);
                 for (let i=0; i<res_manager.length; i++) {
                     manager_list.push(`${res_manager[i].first_name} ${res_manager[i].last_name}`);
                 };
+                // add option for no manager
                 manager_list.push("none");
+                // prompt user to add manager information
                 inquirer
                     .prompt({
                             name: "manager",
@@ -190,26 +186,77 @@ const queryAddEmployee = () => {
                             choices: manager_list
                     })
                     .then(manager => {
+                        // create options array
                         let newEmployee = [employee.firstName, employee.lastName, res_roles[roleId].roles_id];
                         let insertQuery = "";
+                        // change insert query is no manager was selected
                         if (manager.manager === "none") {
                             insertQuery += `insert into employees (first_name, last_name, role_id)`;
-                            insertQuery += `values (?, ?, ?) `;
+                            insertQuery += `values (?, ?, ?)`;
+                        // otherwise push manager id to options array
                         } else {
                             insertQuery = `insert into employees (first_name, last_name, role_id, manager_id)`;
-                            insertQuery += `values (?, ?, ?, ?) `;
+                            insertQuery += `values (?, ?, ?, ?)`;
                             const name = manager.manager.split(" ");
-                            const managerId = res_manager.findIndex(row => row.first_name === name[0]);
+                            const managerId = res_manager.find(row => row.first_name === name[0]).id;
                             console.log(managerId);
-                            newEmployee.push(res_manager[managerId].id);
+                            newEmployee.push(managerId);
                         }
+                        // insert new employee to database
                         connection.query(insertQuery, newEmployee, (err, res) => {
                             if(err) throw err;
                             console.log(`Success! New employee ${employee.firstName} ${employee.lastName} added.`);
+                            // prompt new action for user
                             runApp();
                         });
                     });
             });
         }); 
+    });
+};
+
+const queryViewByManager = () => {
+    connection.query(managerQuery, (err, res) => {
+        if(err) throw err;
+        let manager_list = [];
+        console.log(res);
+        for (let i=0; i<res.length; i++) {
+            manager_list.push(`${res[i].first_name} ${res[i].last_name}`);
+        };
+        // prompt user to choose manager
+        inquirer
+        .prompt({
+            name: "manager",
+            type: "list",
+            message: "Choose a manager",
+            choices: manager_list
+
+        })
+        .then(selection => {
+            const name = selection.manager.split(" ");
+            const managerId = res.find(row => row.first_name === name[0]).id;
+            // console.log(managerId);
+            let newQuery = `Select id, first_name, last_name, title from ${employees}`;
+            newQuery += ` inner join roles`;
+            newQuery += ` on role_id = roles_id`;
+            newQuery += ` where manager_id = ${managerId}`;
+            // queryViewAll(newQuery);
+            connection.query(newQuery, (err, res) => {
+                if(err) throw err;
+                console.table(res);
+                runApp();
+            });
+
+
+        })
+    })
+}
+const queryViewAll = (tableName) => {
+    const query = "Select * from " + tableName;
+    console.log(query);
+    connection.query(query, (err, res) => {
+        if(err) throw err;
+        console.table(res);
+        runApp();
     });
 };
